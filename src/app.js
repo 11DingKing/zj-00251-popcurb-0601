@@ -104,13 +104,31 @@ const startServer = async () => {
       console.log(`  DELETE /api/batches/:id     - 删除批次`);
       console.log(`  GET    /api/apps            - 应用列表`);
       console.log(`  POST   /api/apps            - 添加应用`);
-      console.log(`  GET    /api/apps/:id        - 应用详情`);
+      console.log(
+        `  GET    /api/apps/:id        - 应用详情（可?includeHistory=true返回复查复议历史）`,
+      );
+      console.log(
+        `  GET    /api/apps/:id/timeline - 应用完整时间线（复查+复议+裁定）`,
+      );
       console.log(`  PUT    /api/apps/:id        - 更新应用`);
       console.log(`  PATCH  /api/apps/:id/status - 状态流转`);
       console.log(`  DELETE /api/apps/:id        - 删除应用`);
-      console.log(`  GET    /api/stats/overview  - 总览统计`);
-      console.log(`  GET    /api/stats/by-batch  - 按批次统计`);
-      console.log(`  GET    /api/stats/by-problem-type - 按问题类型统计`);
+      console.log(
+        `  POST   /api/apps/:id/reviews - 创建复查记录（维持下架/放过+审查人+依据）`,
+      );
+      console.log(`  GET    /api/apps/:id/reviews - 应用复查历史`);
+      console.log(
+        `  POST   /api/apps/:id/appeals - 厂商提交复议申请（仅一次）`,
+      );
+      console.log(`  GET    /api/apps/:id/appeals - 应用复议历史`);
+      console.log(
+        `  POST   /api/apps/:id/appeals/:appealId/adjudicate - 专人裁定复议`,
+      );
+      console.log(`  GET    /api/stats/overview  - 总览统计（含复议通过率）`);
+      console.log(`  GET    /api/stats/by-batch  - 按批次统计（含复议通过率）`);
+      console.log(
+        `  GET    /api/stats/by-problem-type - 按问题类型统计（含复议通过率）`,
+      );
       console.log(`\n`);
     });
   } catch (err) {

@@ -1,4 +1,12 @@
-const { Batch, App, sequelize } = require("./models/associations");
+const {
+  Batch,
+  App,
+  Review,
+  Appeal,
+  sequelize,
+  APPEAL_STATUS,
+  REVIEW_RESULT,
+} = require("./models/associations");
 const moment = require("moment");
 
 const seedData = async () => {
@@ -253,6 +261,82 @@ const seedData = async () => {
 
     console.log(
       `初始数据创建完成：${batches.length} 个批次，${apps.length} 个应用`,
+    );
+
+    const weatherApp = apps.find((a) => a.name === "天气预报");
+    const musicApp = apps.find((a) => a.name === "音乐播放器");
+    const quizApp = apps.find((a) => a.name === "全民答题赢奖");
+    const smartreadApp = apps.find((a) => a.name === "智慧阅读");
+
+    const reviews = await Review.bulkCreate([
+      {
+        reviewer: "李审核",
+        result: REVIEW_RESULT.KEEP_REMOVED,
+        basis:
+          "经复查，开屏弹窗仍存在无关闭按钮、展示时长超5秒的问题，不符合《APP收集使用个人信息最小必要评估规范》要求",
+        appId: weatherApp.id,
+        reviewDate: moment().subtract(76, "days").toDate(),
+      },
+      {
+        reviewer: "王审核",
+        result: REVIEW_RESULT.KEEP_REMOVED,
+        basis:
+          "经复查，未获用户同意仍在后台频繁读写存储权限，违反《网络安全法》第四十一条",
+        appId: musicApp.id,
+        reviewDate: moment().subtract(43, "days").toDate(),
+      },
+      {
+        reviewer: "赵审核",
+        result: REVIEW_RESULT.KEEP_REMOVED,
+        basis:
+          "经复查，依然存在诱导分享、强制用户分享给好友才能解锁题目的问题，违反《APP违法违规收集使用个人信息行为认定方法》",
+        appId: quizApp.id,
+        reviewDate: moment().subtract(13, "days").toDate(),
+      },
+    ]);
+
+    console.log(`复查记录创建完成：${reviews.length} 条`);
+
+    const appeals = await Appeal.bulkCreate([
+      {
+        reason:
+          "我司已于75天前发布v2.3.1热修版本，优化了开屏弹窗逻辑，所有弹窗均增加了可点击的关闭按钮，并将默认展示时长缩短至3秒。由于热修版本未触发应用商店审核，望复核。",
+        submitter: "精准气象科技-周法务",
+        submitDate: moment().subtract(74, "days").toDate(),
+        appealStatus: APPEAL_STATUS.GRANT_RECTIFY,
+        adjudicator: "陈主任",
+        adjudicationReason:
+          "经核查应用商店版本及热修包，v2.3.1版本确实修复了上述问题，且整改期限内已主动修复，符合给与整改机会的条件。",
+        adjudicationDate: moment().subtract(72, "days").toDate(),
+        result: REVIEW_RESULT.RELEASE,
+        appId: weatherApp.id,
+      },
+      {
+        reason:
+          "用户反馈的后台读写存储权限问题系因离线音乐缓存组件设计缺陷，我司已重构缓存模块，只在用户进入播放页时才会按需读取。现提交v4.0.2版本供复核。",
+        submitter: "悦动音乐-吴产品",
+        submitDate: moment().subtract(41, "days").toDate(),
+        appealStatus: APPEAL_STATUS.UPHOLD,
+        adjudicator: "孙主任",
+        adjudicationReason:
+          "虽然v4.0.2版本已优化，但在实际测试中发现切换网络状态时仍会出现后台扫描存储的行为，整改不够彻底，维持下架。",
+        adjudicationDate: moment().subtract(39, "days").toDate(),
+        result: REVIEW_RESULT.KEEP_REMOVED,
+        appId: musicApp.id,
+      },
+    ]);
+
+    const grantedWeatherApp = appeals.find((a) => a.appId === weatherApp.id);
+    if (
+      grantedWeatherApp &&
+      grantedWeatherApp.appealStatus === APPEAL_STATUS.GRANT_RECTIFY
+    ) {
+      await weatherApp.update({ status: App.STATUS.RECTIFYING });
+    }
+
+    console.log(`复议记录创建完成：${appeals.length} 条`);
+    console.log(
+      `种子数据全部完成：${batches.length} 个批次，${apps.length} 个应用，${reviews.length} 条复查，${appeals.length} 条复议`,
     );
   } catch (err) {
     console.error("数据初始化失败:", err);
