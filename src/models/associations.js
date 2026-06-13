@@ -109,7 +109,9 @@ const App = sequelize.define(
             newStatus !== STATUS.FAILED_REMOVED &&
             newStatus !== STATUS.RECTIFYING
           ) {
-            const err = new Error("已下架的应用仅能通过复议裁定恢复为整改中，不得直接变更为其他状态");
+            const err = new Error(
+              "已下架的应用仅能通过复议裁定恢复为整改中，不得直接变更为其他状态",
+            );
             err.name = "StatusTransitionError";
             throw err;
           }
@@ -118,8 +120,15 @@ const App = sequelize.define(
             app.removedDate = new Date();
           }
 
-          if (oldStatus === STATUS.FAILED_REMOVED && newStatus === STATUS.RECTIFYING) {
+          if (
+            oldStatus === STATUS.FAILED_REMOVED &&
+            newStatus === STATUS.RECTIFYING
+          ) {
             app.removedDate = null;
+          }
+
+          if (newStatus === STATUS.PASSED && !app.rectifiedAt) {
+            app.rectifiedAt = new Date();
           }
         }
       },
@@ -139,7 +148,8 @@ App.prototype.isOverdue = function () {
 
 App.prototype.wasRectifiedOnTime = function () {
   if (this.status !== STATUS.PASSED) return null;
-  return moment(this.updatedAt).isSameOrBefore(
+  const rectifyTime = this.rectifiedAt || this.updatedAt;
+  return moment(rectifyTime).isSameOrBefore(
     moment(this.rectificationDeadline),
     "day",
   );
@@ -278,4 +288,12 @@ Appeal.belongsTo(App, {
   as: "app",
 });
 
-module.exports = { Batch, App, Review, Appeal, sequelize, APPEAL_STATUS, REVIEW_RESULT };
+module.exports = {
+  Batch,
+  App,
+  Review,
+  Appeal,
+  sequelize,
+  APPEAL_STATUS,
+  REVIEW_RESULT,
+};

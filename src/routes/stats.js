@@ -72,7 +72,7 @@ router.get("/by-batch", async (req, res, next) => {
       const total = apps.length;
       const passed = apps.filter((a) => a.status === App.STATUS.PASSED);
       const onTimePassed = passed.filter((a) =>
-        moment(a.updatedAt).isSameOrBefore(
+        moment(a.rectifiedAt || a.updatedAt).isSameOrBefore(
           moment(a.rectificationDeadline),
           "day",
         ),
@@ -149,7 +149,7 @@ router.get("/by-problem-type", async (req, res, next) => {
       const total = apps.length;
       const passed = apps.filter((a) => a.status === App.STATUS.PASSED);
       const onTimePassed = passed.filter((a) =>
-        moment(a.updatedAt).isSameOrBefore(
+        moment(a.rectifiedAt || a.updatedAt).isSameOrBefore(
           moment(a.rectificationDeadline),
           "day",
         ),

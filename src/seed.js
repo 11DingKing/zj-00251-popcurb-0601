@@ -49,6 +49,7 @@ const seedData = async () => {
         batchId: batches[0].id,
         createdAt: moment().subtract(90, "days").toDate(),
         updatedAt: moment().subtract(85, "days").toDate(),
+        rectifiedAt: moment().subtract(85, "days").toDate(),
       },
       {
         name: "趣玩游戏中心",
@@ -59,6 +60,7 @@ const seedData = async () => {
         batchId: batches[0].id,
         createdAt: moment().subtract(90, "days").toDate(),
         updatedAt: moment().subtract(82, "days").toDate(),
+        rectifiedAt: moment().subtract(82, "days").toDate(),
       },
       {
         name: "天气预报",
@@ -80,6 +82,7 @@ const seedData = async () => {
         batchId: batches[0].id,
         createdAt: moment().subtract(90, "days").toDate(),
         updatedAt: moment().subtract(79, "days").toDate(),
+        rectifiedAt: moment().subtract(79, "days").toDate(),
       },
       {
         name: "智慧阅读",
@@ -101,6 +104,7 @@ const seedData = async () => {
         batchId: batches[1].id,
         createdAt: moment().subtract(60, "days").toDate(),
         updatedAt: moment().subtract(55, "days").toDate(),
+        rectifiedAt: moment().subtract(55, "days").toDate(),
       },
       {
         name: "随心购",
@@ -111,6 +115,7 @@ const seedData = async () => {
         batchId: batches[1].id,
         createdAt: moment().subtract(60, "days").toDate(),
         updatedAt: moment().subtract(52, "days").toDate(),
+        rectifiedAt: moment().subtract(52, "days").toDate(),
       },
       {
         name: "健康计步",
@@ -142,6 +147,7 @@ const seedData = async () => {
         batchId: batches[1].id,
         createdAt: moment().subtract(60, "days").toDate(),
         updatedAt: moment().subtract(51, "days").toDate(),
+        rectifiedAt: moment().subtract(51, "days").toDate(),
       },
       {
         name: "理财助手",
@@ -161,6 +167,7 @@ const seedData = async () => {
         batchId: batches[2].id,
         createdAt: moment().subtract(30, "days").toDate(),
         updatedAt: moment().subtract(25, "days").toDate(),
+        rectifiedAt: moment().subtract(25, "days").toDate(),
       },
       {
         name: "极速清理大师",
@@ -192,6 +199,7 @@ const seedData = async () => {
         batchId: batches[2].id,
         createdAt: moment().subtract(30, "days").toDate(),
         updatedAt: moment().subtract(22, "days").toDate(),
+        rectifiedAt: moment().subtract(22, "days").toDate(),
       },
       {
         name: "WiFi万能连",
