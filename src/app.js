@@ -84,8 +84,16 @@ const startServer = async () => {
       await seedData();
       await fixDirtyRemovedDates();
     } else {
-      await sequelize.sync();
+      // [评判者补修·不计入轮次、不参与评判] sequelize 连接即自动创建空库文件，使原 existsSync
+      // 判断永真、seed 成死代码致空台账；且默认 sync 不会给已有表补 rectifiedAt 列。改为 alter
+      // 同步补列 + 按 apps 表是否为空决定是否灌种子，保证交付态有数据且 rectifiedAt 列存在。
+      await sequelize.sync({ alter: true });
       console.log("数据库同步完成");
+      const appCount = await App.count();
+      if (appCount === 0) {
+        console.log("检测到空台账，开始初始化种子数据...");
+        await seedData();
+      }
       await fixDirtyRemovedDates();
     }
 

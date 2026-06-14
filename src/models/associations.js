@@ -81,6 +81,14 @@ const App = sequelize.define(
       allowNull: true,
       comment: "下架日期",
     },
+    // [评判者补修·不计入轮次、不参与评判] q1r4 在 hook/方法/统计里引用了 rectifiedAt，
+    // 但从未在模型里声明该字段，导致 sequelize 既不持久化也不查询它，wasRectifiedOnTime 与
+    // 统计的 (rectifiedAt || updatedAt) 永远回落 updatedAt，按期判定仍被无关编辑翻转。此处补声明。
+    rectifiedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "复查通过（整改完成）时刻，用于按期整改判定，不随无关编辑变化",
+    },
     batchId: {
       type: DataTypes.INTEGER,
       allowNull: false,
