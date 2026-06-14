@@ -1,12 +1,26 @@
 const express = require("express");
 const router = express.Router();
-const { App, Batch, Review, Appeal, APPEAL_STATUS, REVIEW_RESULT } = require("../models/associations");
+const {
+  App,
+  Batch,
+  Review,
+  Appeal,
+  APPEAL_STATUS,
+  REVIEW_RESULT,
+} = require("../models/associations");
+const {
+  STATUS,
+  isStatusTransitionAllowed,
+  getStatusTransitionError,
+  computeTransitionSideEffects,
+  isOverdue,
+  wasRectifiedOnTime,
+} = require("../rules");
 const { Op } = require("sequelize");
-const moment = require("moment");
 
-const VALID_STATUSES = Object.values(App.STATUS);
-const VALID_REVIEW_RESULTS = Object.values(Review.RESULT);
-const VALID_APPEAL_STATUSES = Object.values(Appeal.STATUS);
+const VALID_STATUSES = Object.values(STATUS);
+const VALID_REVIEW_RESULTS = Object.values(REVIEW_RESULT);
+const VALID_APPEAL_STATUSES = Object.values(APPEAL_STATUS);
 
 router.get("/", async (req, res, next) => {
   try {
@@ -58,7 +72,7 @@ router.get("/", async (req, res, next) => {
       const json = app.toJSON();
       const item = {
         ...json,
-        isOverdue: app.isOverdue(),
+        isOverdue: isOverdue(app),
       };
 
       if (includeCounts === "true") {
@@ -130,8 +144,8 @@ router.get("/:id", async (req, res, next) => {
 
     const resData = {
       ...json,
-      isOverdue: app.isOverdue(),
-      wasRectifiedOnTime: app.wasRectifiedOnTime(),
+      isOverdue: isOverdue(app),
+      wasRectifiedOnTime: wasRectifiedOnTime(app),
     };
 
     if (includeHistory === "true" && json.reviews && json.appeals) {
@@ -211,7 +225,10 @@ router.get("/:id/timeline", async (req, res, next) => {
       },
     });
 
-    if (json.updatedAt && new Date(json.updatedAt).getTime() !== new Date(json.createdAt).getTime()) {
+    if (
+      json.updatedAt &&
+      new Date(json.updatedAt).getTime() !== new Date(json.createdAt).getTime()
+    ) {
       timeline.push({
         type: "status_update",
         typeLabel: "状态更新",
@@ -252,7 +269,10 @@ router.get("/:id/timeline", async (req, res, next) => {
           },
         });
 
-        if (appeal.appealStatus !== APPEAL_STATUS.PENDING && appeal.adjudicationDate) {
+        if (
+          appeal.appealStatus !== APPEAL_STATUS.PENDING &&
+          appeal.adjudicationDate
+        ) {
           timeline.push({
             type: "appeal_adjudication",
             typeLabel: "复议裁定",
@@ -288,8 +308,8 @@ router.get("/:id/timeline", async (req, res, next) => {
           status: json.status,
           rectificationDeadline: json.rectificationDeadline,
           removedDate: json.removedDate,
-          isOverdue: app.isOverdue(),
-          wasRectifiedOnTime: app.wasRectifiedOnTime(),
+          isOverdue: isOverdue(app),
+          wasRectifiedOnTime: wasRectifiedOnTime(app),
         },
         batch,
         reviewCount,
@@ -312,7 +332,7 @@ router.post("/", async (req, res, next) => {
       problemType,
       rectificationDeadline,
       batchId,
-      status = App.STATUS.ANNOUNCED,
+      status = STATUS.ANNOUNCED,
     } = req.body;
 
     if (
@@ -350,7 +370,6 @@ router.post("/", async (req, res, next) => {
       rectificationDeadline: new Date(rectificationDeadline),
       batchId,
       status,
-      removedDate: status === App.STATUS.FAILED_REMOVED ? new Date() : null,
     });
 
     res.status(201).json({
@@ -389,11 +408,11 @@ router.put("/:id", async (req, res, next) => {
       });
     }
 
-    if (status && app.status === App.STATUS.FAILED_REMOVED) {
-      if (status !== App.STATUS.RECTIFYING) {
+    if (status && !isStatusTransitionAllowed(app.status, status)) {
+      if (status !== STATUS.RECTIFYING) {
         return res.status(400).json({
           success: false,
-          message: "已下架的应用仅能通过复议裁定恢复为整改中，不得直接变更为其他状态",
+          message: getStatusTransitionError(app.status, status),
         });
       }
       const pendingAppeal = await Appeal.findOne({
@@ -429,9 +448,13 @@ router.put("/:id", async (req, res, next) => {
     if (batchId) updateData.batchId = batchId;
     if (status) {
       updateData.status = status;
-      if (status === App.STATUS.FAILED_REMOVED && !app.removedDate) {
-        updateData.removedDate = new Date();
-      }
+      const sideEffects = computeTransitionSideEffects(
+        app.status,
+        status,
+        app.removedDate,
+        app.rectifiedAt,
+      );
+      Object.assign(updateData, sideEffects);
     }
 
     await app.update(updateData);
@@ -444,8 +467,7 @@ router.put("/:id", async (req, res, next) => {
   } catch (err) {
     if (
       err.message &&
-      (err.message.includes("已下架") ||
-        err.name === "StatusTransitionError")
+      (err.message.includes("已下架") || err.name === "StatusTransitionError")
     ) {
       return res.status(400).json({
         success: false,
@@ -475,11 +497,11 @@ router.patch("/:id/status", async (req, res, next) => {
       });
     }
 
-    if (app.status === App.STATUS.FAILED_REMOVED) {
-      if (status !== App.STATUS.RECTIFYING) {
+    if (!isStatusTransitionAllowed(app.status, status)) {
+      if (status !== STATUS.RECTIFYING) {
         return res.status(400).json({
           success: false,
-          message: "已下架的应用仅能通过复议裁定恢复为整改中，不得直接变更为其他状态",
+          message: getStatusTransitionError(app.status, status),
         });
       }
       const granted = await Appeal.findOne({
@@ -497,17 +519,22 @@ router.patch("/:id/status", async (req, res, next) => {
     }
 
     const updateData = { status };
-    if (status === App.STATUS.FAILED_REMOVED && !app.removedDate) {
-      updateData.removedDate = new Date();
-    }
+    const sideEffects = computeTransitionSideEffects(
+      app.status,
+      status,
+      app.removedDate,
+      app.rectifiedAt,
+    );
+    Object.assign(updateData, sideEffects);
 
     await app.update(updateData);
 
     let message = "状态更新成功";
-    if (status === App.STATUS.FAILED_REMOVED) {
-      message = "复查未通过，应用已自动下架。建议同时创建复查记录以留存过程信息";
+    if (status === STATUS.FAILED_REMOVED) {
+      message =
+        "复查未通过，应用已自动下架。建议同时创建复查记录以留存过程信息";
     }
-    if (status === App.STATUS.RECTIFYING && app.status === App.STATUS.FAILED_REMOVED) {
+    if (status === STATUS.RECTIFYING && app.status === STATUS.FAILED_REMOVED) {
       message = "依据复议裁定结果，应用已恢复为整改中状态";
     }
 
@@ -519,8 +546,7 @@ router.patch("/:id/status", async (req, res, next) => {
   } catch (err) {
     if (
       err.message &&
-      (err.message.includes("已下架") ||
-        err.name === "StatusTransitionError")
+      (err.message.includes("已下架") || err.name === "StatusTransitionError")
     ) {
       return res.status(400).json({
         success: false,
@@ -557,7 +583,7 @@ router.post("/:id/reviews", async (req, res, next) => {
       });
     }
 
-    if (app.status !== App.STATUS.FAILED_REMOVED) {
+    if (app.status !== STATUS.FAILED_REMOVED) {
       return res.status(400).json({
         success: false,
         message: "仅处于「复查未过下架」状态的应用才可进行复查",
@@ -573,7 +599,7 @@ router.post("/:id/reviews", async (req, res, next) => {
     });
 
     if (result === REVIEW_RESULT.RELEASE) {
-      await app.update({ status: App.STATUS.RECTIFYING });
+      await app.update({ status: STATUS.RECTIFYING });
     }
 
     res.status(201).json({
@@ -590,8 +616,7 @@ router.post("/:id/reviews", async (req, res, next) => {
   } catch (err) {
     if (
       err.message &&
-      (err.message.includes("已下架") ||
-        err.name === "StatusTransitionError")
+      (err.message.includes("已下架") || err.name === "StatusTransitionError")
     ) {
       return res.status(400).json({
         success: false,
@@ -648,7 +673,7 @@ router.post("/:id/appeals", async (req, res, next) => {
       });
     }
 
-    if (app.status !== App.STATUS.FAILED_REMOVED) {
+    if (app.status !== STATUS.FAILED_REMOVED) {
       return res.status(400).json({
         success: false,
         message: "仅处于「复查未过下架」状态的应用可提起复议",
@@ -705,7 +730,8 @@ router.post("/:id/appeals/:appealId/adjudicate", async (req, res, next) => {
       });
     }
 
-    const { adjudicator, result, adjudicationReason, adjudicationDate } = req.body;
+    const { adjudicator, result, adjudicationReason, adjudicationDate } =
+      req.body;
 
     if (!adjudicator || !result || !adjudicationReason) {
       return res.status(400).json({
@@ -732,12 +758,14 @@ router.post("/:id/appeals/:appealId/adjudicate", async (req, res, next) => {
       adjudicator,
       result,
       adjudicationReason,
-      adjudicationDate: adjudicationDate ? new Date(adjudicationDate) : new Date(),
+      adjudicationDate: adjudicationDate
+        ? new Date(adjudicationDate)
+        : new Date(),
       appealStatus,
     });
 
     if (result === REVIEW_RESULT.RELEASE) {
-      await app.update({ status: App.STATUS.RECTIFYING });
+      await app.update({ status: STATUS.RECTIFYING });
     }
 
     res.json({
@@ -754,8 +782,7 @@ router.post("/:id/appeals/:appealId/adjudicate", async (req, res, next) => {
   } catch (err) {
     if (
       err.message &&
-      (err.message.includes("已下架") ||
-        err.name === "StatusTransitionError")
+      (err.message.includes("已下架") || err.name === "StatusTransitionError")
     ) {
       return res.status(400).json({
         success: false,

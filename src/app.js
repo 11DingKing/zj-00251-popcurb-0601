@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { sequelize, App } = require("./models/associations");
+const { STATUS } = require("./rules");
 const { Op } = require("sequelize");
 const seedData = require("./seed");
 
@@ -12,7 +13,7 @@ const fixDirtyRemovedDates = async () => {
   try {
     const dirtyApps = await App.findAll({
       where: {
-        status: App.STATUS.FAILED_REMOVED,
+        status: STATUS.FAILED_REMOVED,
         removedDate: { [Op.is]: null },
       },
     });

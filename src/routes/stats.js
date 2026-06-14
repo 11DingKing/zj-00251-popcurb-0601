@@ -6,8 +6,13 @@ const {
   Appeal,
   Review,
   APPEAL_STATUS,
-  REVIEW_RESULT,
 } = require("../models/associations");
+const {
+  STATUS,
+  isOverdue,
+  wasRectifiedOnTime,
+  getRectifyTime,
+} = require("../rules");
 const { Op, fn, col, literal } = require("sequelize");
 const moment = require("moment");
 
@@ -43,6 +48,33 @@ function computeAppealStats(appeals) {
   };
 }
 
+function computeOnTimeRates(apps) {
+  const passed = apps.filter((a) => a.status === STATUS.PASSED);
+  const onTimePassed = passed.filter((a) => wasRectifiedOnTime(a) === true);
+
+  const onTimeRate =
+    passed.length > 0
+      ? Math.round((onTimePassed.length / passed.length) * 10000) / 100
+      : 0;
+
+  const overallRate =
+    apps.length > 0
+      ? Math.round((onTimePassed.length / apps.length) * 10000) / 100
+      : 0;
+
+  return { onTimeRate, overallRate, passed };
+}
+
+function computeStatusBreakdown(apps) {
+  return {
+    announced: apps.filter((a) => a.status === STATUS.ANNOUNCED).length,
+    rectifying: apps.filter((a) => a.status === STATUS.RECTIFYING).length,
+    passed: apps.filter((a) => a.status === STATUS.PASSED).length,
+    failedRemoved: apps.filter((a) => a.status === STATUS.FAILED_REMOVED)
+      .length,
+  };
+}
+
 router.get("/by-batch", async (req, res, next) => {
   try {
     const batches = await Batch.findAll({
@@ -69,19 +101,8 @@ router.get("/by-batch", async (req, res, next) => {
       const apps = await App.findAll({ where: { batchId: batch.id } });
       const appIds = apps.map((a) => a.id);
 
-      const total = apps.length;
-      const passed = apps.filter((a) => a.status === App.STATUS.PASSED);
-      const onTimePassed = passed.filter((a) =>
-        moment(a.rectifiedAt || a.updatedAt).isSameOrBefore(
-          moment(a.rectificationDeadline),
-          "day",
-        ),
-      );
-      const removed = apps.filter(
-        (a) => a.status === App.STATUS.FAILED_REMOVED,
-      );
-      const rectifying = apps.filter((a) => a.status === App.STATUS.RECTIFYING);
-      const announced = apps.filter((a) => a.status === App.STATUS.ANNOUNCED);
+      const { onTimeRate, overallRate, passed } = computeOnTimeRates(apps);
+      const removed = apps.filter((a) => a.status === STATUS.FAILED_REMOVED);
 
       const reviews =
         appIds.length > 0
@@ -92,14 +113,6 @@ router.get("/by-batch", async (req, res, next) => {
           ? await Appeal.findAll({ where: { appId: { [Op.in]: appIds } } })
           : [];
 
-      const onTimeRate =
-        passed.length > 0
-          ? Math.round((onTimePassed.length / passed.length) * 10000) / 100
-          : 0;
-
-      const overallRate =
-        total > 0 ? Math.round((onTimePassed.length / total) * 10000) / 100 : 0;
-
       const appealStats = computeAppealStats(appeals);
 
       result.push({
@@ -107,13 +120,8 @@ router.get("/by-batch", async (req, res, next) => {
         batchNumber: batch.batchNumber,
         theme: batch.theme,
         announceDate: batch.announceDate,
-        totalCount: total,
-        statusBreakdown: {
-          announced: announced.length,
-          rectifying: rectifying.length,
-          passed: passed.length,
-          failedRemoved: removed.length,
-        },
+        totalCount: apps.length,
+        statusBreakdown: computeStatusBreakdown(apps),
         onTimeRectificationRate: onTimeRate,
         overallOnTimeRate: overallRate,
         removedCount: removed.length,
@@ -146,17 +154,8 @@ router.get("/by-problem-type", async (req, res, next) => {
       });
       const appIds = apps.map((a) => a.id);
 
-      const total = apps.length;
-      const passed = apps.filter((a) => a.status === App.STATUS.PASSED);
-      const onTimePassed = passed.filter((a) =>
-        moment(a.rectifiedAt || a.updatedAt).isSameOrBefore(
-          moment(a.rectificationDeadline),
-          "day",
-        ),
-      );
-      const removed = apps.filter(
-        (a) => a.status === App.STATUS.FAILED_REMOVED,
-      );
+      const { onTimeRate, overallRate, passed } = computeOnTimeRates(apps);
+      const removed = apps.filter((a) => a.status === STATUS.FAILED_REMOVED);
 
       const reviews =
         appIds.length > 0
@@ -167,27 +166,12 @@ router.get("/by-problem-type", async (req, res, next) => {
           ? await Appeal.findAll({ where: { appId: { [Op.in]: appIds } } })
           : [];
 
-      const onTimeRate =
-        passed.length > 0
-          ? Math.round((onTimePassed.length / passed.length) * 10000) / 100
-          : 0;
-
-      const overallRate =
-        total > 0 ? Math.round((onTimePassed.length / total) * 10000) / 100 : 0;
-
       const appealStats = computeAppealStats(appeals);
 
       result.push({
         problemType: item.problemType,
-        totalCount: total,
-        statusBreakdown: {
-          announced: apps.filter((a) => a.status === App.STATUS.ANNOUNCED)
-            .length,
-          rectifying: apps.filter((a) => a.status === App.STATUS.RECTIFYING)
-            .length,
-          passed: passed.length,
-          failedRemoved: removed.length,
-        },
+        totalCount: apps.length,
+        statusBreakdown: computeStatusBreakdown(apps),
         onTimeRectificationRate: onTimeRate,
         overallOnTimeRate: overallRate,
         removedCount: removed.length,
@@ -212,35 +196,8 @@ router.get("/overview", async (req, res, next) => {
     const allReviews = await Review.findAll();
     const allAppeals = await Appeal.findAll();
 
-    const total = allApps.length;
-    const passed = allApps.filter((a) => a.status === App.STATUS.PASSED);
-    const onTimePassed = passed.filter((a) =>
-      moment(a.updatedAt).isSameOrBefore(
-        moment(a.rectificationDeadline),
-        "day",
-      ),
-    );
-    const removed = allApps.filter(
-      (a) => a.status === App.STATUS.FAILED_REMOVED,
-    );
-    const rectifying = allApps.filter(
-      (a) => a.status === App.STATUS.RECTIFYING,
-    );
-    const announced = allApps.filter((a) => a.status === App.STATUS.ANNOUNCED);
-    const overdue = allApps.filter(
-      (a) =>
-        moment().isAfter(moment(a.rectificationDeadline), "day") &&
-        a.status !== App.STATUS.PASSED &&
-        a.status !== App.STATUS.FAILED_REMOVED,
-    );
-
-    const onTimeRate =
-      passed.length > 0
-        ? Math.round((onTimePassed.length / passed.length) * 10000) / 100
-        : 0;
-
-    const overallRate =
-      total > 0 ? Math.round((onTimePassed.length / total) * 10000) / 100 : 0;
+    const { onTimeRate, overallRate } = computeOnTimeRates(allApps);
+    const overdue = allApps.filter((a) => isOverdue(a));
 
     const batchCounts = await Batch.findAll({
       attributes: [
@@ -257,17 +214,13 @@ router.get("/overview", async (req, res, next) => {
       success: true,
       data: {
         totalBatches: allBatches.length,
-        totalApps: total,
-        statusBreakdown: {
-          announced: announced.length,
-          rectifying: rectifying.length,
-          passed: passed.length,
-          failedRemoved: removed.length,
-        },
+        totalApps: allApps.length,
+        statusBreakdown: computeStatusBreakdown(allApps),
         overdueCount: overdue.length,
         onTimeRectificationRate: onTimeRate,
         overallOnTimeRate: overallRate,
-        removedCount: removed.length,
+        removedCount: allApps.filter((a) => a.status === STATUS.FAILED_REMOVED)
+          .length,
         monthlyBatchTrend: batchCounts.map((b) => ({
           month: b.dataValues.month,
           count: b.dataValues.count,
